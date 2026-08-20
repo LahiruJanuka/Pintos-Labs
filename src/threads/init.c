@@ -208,7 +208,13 @@ pintos_init (void)
 #endif
 
   printf ("Boot complete.\n");
-  printf ("Boot complete.\n");
+  printf (
+        "\n  ___ ___ _  _ _____ ___  ___ \n"
+          " | _ \\_ _| \\| |_   _/ _ \\/ __|\n"
+          " |  _/| || .` | | || (_) \\__ \\\n"
+          " |_| |___|_|\\_| |_| \\___/|___/\n\n"
+          "  Welcome to Pintos Interactive Shell!\n" 
+  );
   
   if (*argv != NULL) {
     /* Run actions specified on kernel command line. */
