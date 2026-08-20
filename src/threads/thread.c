@@ -71,6 +71,12 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/* Sleep queue to hold sleeping (blocked) threads */
+static struct list sleep_list;
+
+/* Minimum wake time among all sleeping threads (Global Tick) */
+static int64_t next_tick_to_wake = INT64_MAX;
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -92,6 +98,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -582,3 +589,69 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* Puts thread to sleep and adds it to sleep_list */
+void
+thread_sleep (int64_t ticks)
+{
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+
+  /* Turn off interrupts to protect sleep_list */
+  old_level = intr_disable ();
+
+  if (cur != idle_thread)
+    {
+      cur->ticks_blocked = ticks;
+      list_push_back (&sleep_list, &cur->elem);
+
+      /* Update global tick to the smallest wake-up time */
+      if (ticks < next_tick_to_wake)
+        next_tick_to_wake = ticks;
+
+      /* Change thread state to BLOCKED and reschedule CPU */
+      thread_block ();
+    }
+
+  /* Restore interrupts */
+  intr_set_level (old_level);
+}
+
+/* Checks sleep_list and wakes up threads whose time has come */
+void
+thread_awake (int64_t current_ticks)
+{
+  /* Return early if no thread needs to wake up yet */
+  if (current_ticks < next_tick_to_wake)
+    return;
+
+  struct list_elem *e = list_begin (&sleep_list);
+  next_tick_to_wake = INT64_MAX; /* Reset global tick */
+
+  while (e != list_end (&sleep_list))
+    {
+      struct thread *t = list_entry (e, struct thread, elem);
+
+      if (current_ticks >= t->ticks_blocked)
+        {
+          /* Time is up: remove from sleep_list and wake up */
+          e = list_remove (e);
+          thread_unblock (t);
+        }
+      else
+        {
+          /* Track the new smallest wake time */
+          if (t->ticks_blocked < next_tick_to_wake)
+            next_tick_to_wake = t->ticks_blocked;
+
+          e = list_next (e);
+        }
+    }
+}
+
+/* Getter function for next_tick_to_wake */
+int64_t
+get_next_tick_to_wake (void)
+{
+  return next_tick_to_wake;
+}
