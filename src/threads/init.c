@@ -72,6 +72,86 @@ static void locate_block_device (enum block_type, const char *name);
 
 int pintos_init (void) NO_RETURN;
 
+/* Helper function to read a line from keyboard input */
+static void 
+read_line (char *buffer, size_t max_len) 
+{
+  size_t idx = 0;
+  while (idx < max_len - 1) 
+    {
+      uint8_t c = input_getc ();
+      if (c == '\r' || c == '\n') 
+        {
+          putchar ('\n');
+          break;
+        } 
+      else if (c == '\b' || c == 127) /* Handle backspace */
+        {
+          if (idx > 0) 
+            {
+              idx--;
+              printf ("\b \b");
+            }
+        } 
+      else 
+        {
+          buffer[idx++] = c;
+          putchar (c); /* Echo back character */
+        }
+    }
+  buffer[idx] = '\0';
+}
+
+/* Interactive shell main loop */
+static void 
+run_shell (void) 
+{
+  char line[128];
+  while (1) 
+    {
+      printf ("\nCS2043 - 240224F > ");
+      read_line (line, sizeof (line));
+
+      if (strlen (line) == 0)
+        continue;
+      if (strcmp (line, "whoami") == 0)
+        {
+          printf ("Lahiru - OS\n");
+        } 
+      else if (strcmp (line, "shutdown") == 0)
+        {
+          shutdown_power_off ();
+        } 
+      else if (strcmp (line, "time") == 0)
+        {
+          /* Convert timer ticks into seconds since epoch */
+          int64_t ticks = timer_ticks ();
+          printf ("%"PRId64" s\n", ticks / TIMER_FREQ);
+        } 
+      else if (strcmp (line, "ram") == 0)
+        {
+          printf ("%'"PRIu32" kB RAM available\n", init_ram_pages * PGSIZE / 1024);
+        }
+      else if (strcmp (line, "thread") == 0)
+        {
+          thread_print_stats ();
+        } 
+      else if (strcmp (line, "priority") == 0)
+        {
+          printf ("Current thread priority: %d\n", thread_current ()->priority);
+        } 
+      else if (strcmp (line, "exit") == 0)
+        {
+          printf ("Exiting interactive shell... Bye!\n");
+          break;
+        } 
+      else 
+        {
+          printf ("Unknown command: %s\n", line);
+        }
+    }
+}
+
 /* Pintos main entry point. */
 int
 pintos_init (void)
@@ -128,12 +208,14 @@ pintos_init (void)
 #endif
 
   printf ("Boot complete.\n");
+  printf ("Boot complete.\n");
   
   if (*argv != NULL) {
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+    run_shell();
   }
 
   /* Finish up. */
