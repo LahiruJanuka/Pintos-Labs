@@ -66,6 +66,7 @@ static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
+bool thread_higher_priority (const struct list_elem *a, const struct list_elem *b,void *aux UNUSED);
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
@@ -122,6 +123,15 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+}
+
+bool
+thread_higher_priority (const struct list_elem *a, const struct list_elem *b,
+                         void *aux UNUSED)
+{
+  const struct thread *ta = list_entry (a, struct thread, elem);
+  const struct thread *tb = list_entry (b, struct thread, elem);
+  return ta->priority > tb->priority;
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -207,7 +217,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-
+  thread_preempt();
   return tid;
 }
 
@@ -244,7 +254,8 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  // list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, thread_higher_priority, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -315,7 +326,8 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    // list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, thread_higher_priority, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -338,11 +350,28 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+void
+thread_preempt (void)
+{
+  if (list_empty (&ready_list))
+    return;
+
+  struct thread *t = list_entry (list_front (&ready_list), struct thread, elem);
+  if (t->priority > thread_current ()->priority)
+    {
+      if (intr_context ())
+        intr_yield_on_return ();   /* can't block/switch inside an interrupt handler */
+      else
+        thread_yield ();
+    }
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  thread_preempt();
 }
 
 /* Returns the current thread's priority. */
@@ -647,6 +676,7 @@ thread_awake (int64_t current_ticks)
           e = list_next (e);
         }
     }
+    thread_preempt();
 }
 
 /* Getter function for next_tick_to_wake */
