@@ -93,6 +93,10 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+    int base_priority;              /* Priority without any donations. */
+    struct list locks_held;         /* Locks this thread currently holds. */
+    struct lock *wait_on_lock;      /* Lock this thread is blocked on, or NULL. */
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -142,5 +146,7 @@ void thread_awake (int64_t current_ticks);
 void thread_preempt (void);
 int64_t get_next_tick_to_wake (void);
 bool thread_higher_priority (const struct list_elem *a, const struct list_elem *b,void *aux);
+void thread_donate_priority (struct thread *t);
+void thread_update_priority (struct thread *t);
 
 #endif /* threads/thread.h */

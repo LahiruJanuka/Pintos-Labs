@@ -72,6 +72,8 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+static void thread_reposition (struct thread *t);
+
 /* Sleep queue to hold sleeping (blocked) threads */
 static struct list sleep_list;
 
@@ -370,8 +372,10 @@ thread_preempt (void)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
-  thread_preempt();
+  struct thread *cur = thread_current ();
+  cur->base_priority = new_priority;
+  thread_update_priority (cur);
+  thread_preempt ();
 }
 
 /* Returns the current thread's priority. */
@@ -499,6 +503,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  t->base_priority = priority;
+  t->wait_on_lock = NULL;
+  list_init (&t->locks_held);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -677,6 +685,62 @@ thread_awake (int64_t current_ticks)
         }
     }
     thread_preempt();
+}
+
+void
+thread_update_priority (struct thread *t)
+{
+  enum intr_level old_level = intr_disable ();
+  int max_priority = t->base_priority;
+  struct list_elem *e;
+
+  for (e = list_begin (&t->locks_held); e != list_end (&t->locks_held);
+       e = list_next (e))
+    {
+      struct lock *l = list_entry (e, struct lock, elem);
+      if (!list_empty (&l->semaphore.waiters))
+        {
+          struct thread *top =
+              list_entry (list_front (&l->semaphore.waiters), struct thread, elem);
+          if (top->priority > max_priority)
+            max_priority = top->priority;
+        }
+    }
+
+  t->priority = max_priority;
+  intr_set_level (old_level);
+}
+
+void
+thread_donate_priority (struct thread *t)
+{
+  enum intr_level old_level = intr_disable ();
+  int depth = 0;
+
+  while (t->wait_on_lock != NULL && depth < 8)
+    {
+      struct thread *holder = t->wait_on_lock->holder;
+      if (holder == NULL || holder->priority >= t->priority)
+        break;
+
+      holder->priority = t->priority;
+      thread_reposition (holder);
+
+      t = holder;
+      depth++;
+    }
+
+  intr_set_level (old_level);
+}
+
+static void
+thread_reposition (struct thread *t)
+{
+  if (t->status == THREAD_READY)
+    {
+      list_remove (&t->elem);
+      list_insert_ordered (&ready_list, &t->elem, thread_higher_priority, NULL);
+    }
 }
 
 /* Getter function for next_tick_to_wake */
